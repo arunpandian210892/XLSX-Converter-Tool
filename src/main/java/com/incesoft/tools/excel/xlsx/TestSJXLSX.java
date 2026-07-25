@@ -2,9 +2,16 @@ package com.incesoft.tools.excel.xlsx;
 
 import java.io.BufferedOutputStream;
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.OutputStream;
+import java.lang.reflect.Array;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+
+import javax.xml.stream.XMLStreamException;
 
 import com.incesoft.tools.excel.xlsx.Sheet.SheetRowReader;
 import com.incesoft.tools.excel.xlsx.SimpleXLSXWorkbook.Commiter;
@@ -158,32 +165,89 @@ public class TestSJXLSX {
 	}
 
 	private static SimpleXLSXWorkbook newWorkbook() {
-		return new SimpleXLSXWorkbook(new File("/1.xlsx"));
+		return new SimpleXLSXWorkbook(new File("src/main/resources/new_retail_data.xlsx"));
+//		return new SimpleXLSXWorkbook(new File("src/main/resources/1.xlsx"));
 		// return new SimpleXLSXWorkbook(new File("/sample_no_rel.xlsx"));
 	}
 
-	private static OutputStream newOutput(String suffix) throws Exception {
-		return new BufferedOutputStream(new FileOutputStream("/sample_"
-				+ suffix + ".xlsx"));
+	private static OutputStream newOutput(String filename) throws FileNotFoundException {
+//		return new BufferedOutputStream(new FileOutputStream(new File("src/main/resources/" + filename + ".xlsx")));
+		return new BufferedOutputStream(new FileOutputStream(new File(filename + ".xlsx")));
+	}
+
+	public static void sortSheetByColumn(SimpleXLSXWorkbook workbook, int sheetIndex, String sheetname, final int... sortColumns) {
+		Sheet sheet = workbook.getSheet(sheetIndex);
+		sheet.sort(sortColumns);
+		
+		try {
+			OutputStream output = newOutput("src/main/resources/sorted_output");
+			Commiter commiter = workbook.newCommiter(output);
+			commiter.beginCommit();
+			if(!sheetname.isEmpty()) {
+				sheet.setSheetName(sheetname);
+			}
+			commiter.beginCommitSheet(sheet);
+			// merge it first,otherwise the modification will not take effect
+			commiter.commitSheetModifications();
+			commiter.commitSheetWrites();// flush writes,save memory
+
+			commiter.endCommitSheet();
+			commiter.endCommit();
+			output.close();
+		} catch (FileNotFoundException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (XMLStreamException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		
+	}
+	
+
+	/**
+	 * Test method to demonstrate setting sheet names
+	 */
+	public static void testSetSheetName(SimpleXLSXWorkbook workbook, OutputStream output) throws Exception {
+		Sheet sheet = workbook.getSheet(0);
+		// Set the sheet name
+		sheet.setSheetName("MyDataSheet");
+		addRecordsOnTheFly(workbook, sheet, 0);
+		workbook.commit(output);
 	}
 
 	public static void main(String[] args) throws Exception {
-		// READ by classic mdoe - load all records
+		// READ by classic mode - load all records
 		long st = System.currentTimeMillis();
-		for (int i = 0; i < 1; i++) {
+//		for (int i = 0; i < 1; i++) {
 			SimpleXLSXWorkbook workbook = newWorkbook();
-			testLoadALL(workbook);
+			List<Sheet> sheets = workbook.sheets;
+			for(Sheet s : sheets) {
+//				System.out.println("Shhet name ::::"+s.getSheetName());
+			}
+			sortSheetByColumn(workbook, 0,  "test output", new int[] { 0,2 });
+			
+			// Save the workbook with sorted data to output file
+//			OutputStream output = newOutput("sorted_output");
+//			workbook.commit(output);
+//			output.close();
+//			
+//			testLoadALL(workbook);
+//			inMemoryIterateALL(workbook);
 			workbook.close();
-			System.out.println("=========" + i);
-		}
+//		}
+
 		// READ by stream mode - iterate records one by one
 		// testIterateALL(newWorkbook());
-		System.out.println(System.currentTimeMillis() - st);
+		System.out.println("Excel process time taken ::: "+(System.currentTimeMillis() - st)/1000 + " seconds");
 		// //
 		// // // WRITE - we take WRITE as a special kind of MODIFY
-		OutputStream output = newOutput("write");
-		testWrite(newWorkbook(), output);
-		output.close();
+//		OutputStream output = newOutput("write");
+//		testWrite(newWorkbook(), output);
+//		output.close();
 		// //
 		// // // WRITE large data
 		// output = newOutput("write_inc");
@@ -191,8 +255,8 @@ public class TestSJXLSX {
 		// output.close();
 		//
 		// // MODIFY it and WRITE large data
-		output = newOutput("merge_write");
-		testMergeBeforeWrite(newWorkbook(), output);
-		output.close();
+//		output = newOutput("merge_write");
+//		testMergeBeforeWrite(newWorkbook(), output);
+//		output.close();
 	}
 }

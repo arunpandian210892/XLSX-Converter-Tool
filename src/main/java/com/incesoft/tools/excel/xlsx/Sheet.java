@@ -2,6 +2,7 @@ package com.incesoft.tools.excel.xlsx;
 
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 
@@ -25,9 +26,16 @@ public class Sheet {
 
 	private SimpleXLSXWorkbook workbook;
 
+	private String sheetName;
+
 	public Sheet(int sheetIndex, SimpleXLSXWorkbook workbook) {
+		this(sheetIndex, workbook, null);
+	}
+
+	public Sheet(int sheetIndex, SimpleXLSXWorkbook workbook, String sheetName) {
 		this.sheetIndex = sheetIndex;
 		this.workbook = workbook;
+		this.sheetName = sheetName;
 	}
 
 	List<Cell[]> parsedRows = new ArrayList<Cell[]>();
@@ -380,6 +388,55 @@ public class Sheet {
 		return r;
 	}
 
+	public void sort(final int... sortColumns) {
+		if (!(alreadyParsed && addToMemory)) {
+			throw new IllegalStateException(
+					"rows not parsed,it should only be used in classic mode");
+		}
+		if (sortColumns == null || sortColumns.length == 0) {
+			return;
+		}
+		
+	    // Skip first row (header)
+	    Cell[] headerRow = null;
+
+	    if (!parsedRows.isEmpty()) {
+	        headerRow = parsedRows.remove(0);
+	    }
+	    
+		parsedRows.sort(new Comparator<Cell[]>() {
+			@Override
+			public int compare(Cell[] r1, Cell[] r2) {
+				for (int sortColumn : sortColumns) {
+					String v1 = (r1.length > sortColumn && r1[sortColumn] != null) ? r1[sortColumn].getValue() : "";
+					String v2 = (r2.length > sortColumn && r2[sortColumn] != null) ? r2[sortColumn].getValue() : "";
+					int cmp = v1.compareTo(v2);
+					if (cmp != 0) {
+						return cmp;
+					}
+				}
+				return 0;
+			}
+		});
+		
+	    // Add header back to first position
+	    if (headerRow != null) {
+	        parsedRows.add(0, headerRow);
+	    }
+	    
+	 // Print rows
+		for (Cell[] row : parsedRows) {
+		    for (Cell cell : row) {
+		        if (cell != null) {
+		            System.out.print(cell.toString() + " | ");
+		        } else {
+		            System.out.print("null | ");
+		        }
+		    }
+		    System.out.println(); // next line after each row
+		}
+	}
+
 	/**
 	 * 
 	 * @param r
@@ -728,6 +785,14 @@ public class Sheet {
 
 	public int getSheetIndex() {
 		return sheetIndex;
+	}
+
+	public String getSheetName() {
+		return sheetName;
+	}
+
+	public void setSheetName(String sheetName) {
+		this.sheetName = sheetName;
 	}
 
 	public boolean isMerged() {

@@ -98,4 +98,10 @@ public class XLSXWriterSupport extends WriterSupport {
 		}
 		sheet = workbook.getSheet(sheetIndex, true);
 	}
+
+	public void setSheetName(String sheetName) {
+		if (sheet != null) {
+			sheet.setSheetName(sheetName);
+		}
+	}
 }

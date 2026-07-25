@@ -36,6 +36,10 @@ abstract public class WriterSupport {
 
 	abstract public void close();
 
+	public void setSheetName(String sheetName) {
+		// Default implementation - can be overridden by subclasses
+	}
+
 	public static WriterSupport newInstance(int type, File f) {
 		WriterSupport support = null;
 		if (type == TYPE_XLSX)

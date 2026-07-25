@@ -72,6 +72,8 @@ public class SimpleXLSXWorkbook {
 
 	private static final String PATH_CONTENT_TYPES = "[Content_Types].xml";
 
+	private static final String PATH_XL_WORKBOOK = "xl/workbook.xml";
+
 	static private List<Pattern> blackListPatterns = new ArrayList<Pattern>();
 
 	static private List<String> blackList = Arrays.asList(".*comments\\d+\\.xml", ".*calcChain\\.xml",
@@ -283,20 +285,43 @@ public class SimpleXLSXWorkbook {
 	List<Sheet> sheets = new ArrayList<Sheet>();
 
 	private void initSheets() {
+		List<String> sheetNames = parseWorkbookSheetNames();
 		for (int i = 0; true; i++) {
 			ZipEntry entry = zipfile.getEntry(getSheetPath(i + 1));
 			if (entry == null) {
 				break;
 			}
-			sheets.add(new Sheet(i, this));
+			String sheetName = i < sheetNames.size() ? sheetNames.get(i) : null;
+			sheets.add(new Sheet(i, this, sheetName));
 		}
+	}
+
+	private List<String> parseWorkbookSheetNames() {
+		List<String> names = new ArrayList<String>();
+		InputStream workbookStream = findData(PATH_XL_WORKBOOK);
+		if (workbookStream == null) {
+			return names;
+		}
+		try {
+			XMLStreamReader reader = inputFactory.createXMLStreamReader(workbookStream);
+			while (reader.hasNext()) {
+				int type = reader.next();
+				if (type == XMLStreamReader.START_ELEMENT && "sheet".equals(reader.getLocalName())) {
+					names.add(reader.getAttributeValue(null, "name"));
+				}
+			}
+			reader.close();
+		} catch (XMLStreamException e) {
+			throw new RuntimeException(e);
+		}
+		return names;
 	}
 
 	/**
 	 * create new sheet added to exists sheet list
 	 */
 	public Sheet createSheet() {
-		Sheet sheet = new Sheet(sheets.size(), this);
+		Sheet sheet = new Sheet(sheets.size(), this, "Sheet" + (sheets.size() + 1));
 		sheets.add(sheet);
 		return sheet;
 	}
@@ -442,6 +467,71 @@ public class SimpleXLSXWorkbook {
 		}
 
 		writer.writeEndElement();// end sst
+	}
+
+	private void mergeWorkbook(XMLStreamWriter writer) throws XMLStreamException {
+		writeDocumentStart(writer);
+		XMLStreamReader reader = getReader(PATH_XL_WORKBOOK);
+		boolean inSheets = false;
+		int sheetIndex = 0;
+		boolean lastWasCustomSheet = false;
+		
+		while (reader.hasNext()) {
+			int event = reader.next();
+			switch (event) {
+			case XMLStreamReader.START_ELEMENT:
+				if ("sheets".equals(reader.getLocalName())) {
+					inSheets = true;
+					writeStart(reader, writer);
+				} else if ("sheet".equals(reader.getLocalName()) && inSheets) {
+					// Write sheet element with updated name
+					writer.writeStartElement("sheet");
+					// Write the name attribute with the current sheet name
+					if (sheetIndex < sheets.size()) {
+						Sheet sheet = sheets.get(sheetIndex);
+						writer.writeAttribute("name", sheet.getSheetName() != null ? sheet.getSheetName() : "Sheet" + (sheetIndex + 1));
+					}
+					// Copy other attributes from the original sheet element
+					for (int i = 0; i < reader.getAttributeCount(); i++) {
+						String attrName = reader.getAttributeLocalName(i);
+						String attrValue = reader.getAttributeValue(i);
+						// Skip the name attribute as we've already written it
+						if (!attrName.equals("name")) {
+							String attrPrefix = reader.getAttributePrefix(i);
+							if (attrPrefix != null && attrPrefix.length() > 0) {
+								writer.writeAttribute(attrPrefix, reader.getNamespaceURI(attrPrefix), attrName, attrValue);
+							} else {
+								writer.writeAttribute(attrName, attrValue);
+							}
+						}
+					}
+					writer.writeEndElement();
+					lastWasCustomSheet = true;
+					sheetIndex++;
+				} else {
+					writeStart(reader, writer);
+					lastWasCustomSheet = false;
+				}
+				break;
+			case XMLStreamReader.END_ELEMENT:
+				// Skip END_ELEMENT for sheet elements we've already written and closed
+				if ("sheet".equals(reader.getLocalName()) && lastWasCustomSheet) {
+					lastWasCustomSheet = false;
+					// Don't call writeEndElement - we already closed the custom sheet
+				} else {
+					if ("sheets".equals(reader.getLocalName())) {
+						inSheets = false;
+					}
+					writer.writeEndElement();
+				}
+				break;
+			case XMLStreamReader.CHARACTERS:
+				writer.writeCharacters(reader.getText());
+				break;
+			default:
+				break;
+			}
+		}
 	}
 
 	private void mergeStyles(XMLStreamWriter writer) throws XMLStreamException {
@@ -798,11 +888,12 @@ public class SimpleXLSXWorkbook {
 		HashSet<String> mergedItems = new HashSet<String>();
 
 		private Commiter(SimpleXLSXWorkbook wb, OutputStream output) {
-			this.wb = wb;
-			zos = new ZipOutputStream(output);
-		}
+		log.debug("Commiter initialized with output stream: " + output);
+		this.wb = wb;
+		zos = new ZipOutputStream(output);
+	}
 
-		ZipOutputStream zos;
+	ZipOutputStream zos;
 
 		boolean modified = false;
 
@@ -941,6 +1032,8 @@ public class SimpleXLSXWorkbook {
 					commitRelation();
 					commitSharedStrings();
 				}
+				// Always write workbook.xml to ensure sheet names are preserved
+				commitWorkbook();
 				commitUnmodifiedStream();
 				zos.close();
 			} catch (Exception e) {
@@ -1045,6 +1138,16 @@ public class SimpleXLSXWorkbook {
 			try {
 				XMLStreamWriter writer = newWriter(PATH_SHAREDSTRINGS);
 				wb.mergeSharedStrings(writer);
+				writer.close();
+			} catch (Exception e) {
+				throw new RuntimeException(e);
+			}
+		}
+
+		private void commitWorkbook() {
+			try {
+				XMLStreamWriter writer = newWriter(PATH_XL_WORKBOOK);
+				wb.mergeWorkbook(writer);
 				writer.close();
 			} catch (Exception e) {
 				throw new RuntimeException(e);
